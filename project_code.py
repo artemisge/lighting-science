@@ -45,7 +45,7 @@ def auto_measure(UV_on, step):
     for i in range(end):
         channel_array = [] # array to keep all the spds of this particular channel
         # For each measurement: (#measurements=255/step)
-        for j in range(0, 255, step):
+        for j in range(0, 255+1, step):
             # initialize all the drivers values to zero -> [0,0,0,0,0,0].
             DMX_arguments_tmp_array = [0]*6
             # we will measure every channel, increasing the value (0-255) with an interval/step.
@@ -88,7 +88,7 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
             # print("illuminance of channel measurement: " + str(np.array(tmp).shape))
 
         # now we have all luminances for all measurements for different driver values for this specific i-channel. And we'll make a plot
-        x = [i for i in range(0, 255, step)]
+        x = [i for i in range(0, 255+1, step)]
         plt.plot(x, array_luminance_i, **{'color': 'lightsteelblue', 'marker': 'o'})
         plt.xlabel('Driver Values')
         plt.ylabel('Luminance')
@@ -108,7 +108,7 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
         plt.ylabel('Normalized Luminance')
         plt.title('Normalized Luminance for different driver values')
         plt.show() # 1 plot per channel
-    print(array_normalized_luminances)
+    # print(array_normalized_luminances)
     return array_normalized_luminances, array_luminances
 
 # function that receives an 1D array with (normalized) luminances of *1* channel and returns two functions that are the cubic spline interpolation of the (normalized) luminances and the corresponding driver values.
@@ -117,7 +117,7 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
 # Argument 'step' is the step that we increased the driver values to make measurements in task 2.
 def interpolate_luminances(array_luminances, step):
     # make sample points of driver values, according to the measurements that we did on task 2.
-    driver_value = [i for i in range(0, 255, step)]
+    driver_value = [i for i in range(0, 255+1, step)]
     # dv_to_lum -> give driver value to find luminance
     # lum_to_dv -> give luminance to find driver value
     dv_to_lum = []
@@ -138,13 +138,14 @@ def interpolate_luminances(array_luminances, step):
 # _______________________________________________________________________
 
 # takes as arguments the interpolation functions that we calculated at task2. (Reminder: driver value to luminance | luminance to driver value, for every channel. So dv_to_lum[0](255) will return the luminance of red channel for driver value of 255.) AND measurement step AND number of channels to mix
-def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
+def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_array):
     t_l = 100 # Target Luminance: find the correct driver values for R,G,B that have luminance = 100 (or as close to 100)
 
     # EEW tristimulous values are XYZ = [100,100,100]
     # EEW chromaticity coordinates are x,y = [1/3, 1/3]
     # EEW Yxy coordinates are Y,x,y = [100,1/3,1/3]
     Yxy_eew = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
+    print("Yxy eew: " + str(Yxy_eew))
 
     # We want the spds of all the primaries, but for every channel/primary,we have many different spds, given a driver value. We want to take the measurement with the higher driver value, which is the max lumimance we can get.
     # We are going to stack all of max-spds of the primaries into the variable below
@@ -154,23 +155,32 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
         # We know that the last measurement has the higher driver value, so it will be on the last element of the array.
         # A python way to get the last element is: some_list[-1]
         max_spd = array_measured_spectra[i][-1]
+        # print("max spd for channel :" + str(i) + str(max_spd))
         spd_p.append(max_spd)
+    spd_p.insert(0, wavelengths_array)
+    spd_p = np.array(spd_p)
+    # print(spd_p)
+    # print(spd_p.shape)
 
     # Now we convert the stacked-spd of the primaries into Yxy coordinates
     XYZp = lx.spd_to_xyz(spd_p)
     Yxyp = lx.xyz_to_Yxy(XYZp) 
+    print("Yxy primaries: " + str(Yxyp))
 
     # We need to solve w[] = Cp^-1 * Ct[], where w[]: weights vector, Cp^-1: inverse of primaries Yxy coords, and Ct[]: target color vector Yxy coords.
-    weights = spb.colormixer_pinv(Yxy_eew,Yxyp,input_fmt='Yxy') # mixing using Yxy
-    
+    weights = spb.colormixer_pinv(Yxy_eew,Yxyp,input_fmt='Yxy')[0] # mixing using Yxy, it returns a 2D array, so we use array[0] to get only one dimension
+    print("weights: " + str(weights))
+
     # weights are on a scale of 0-1. We need to convert them into a scale of 0-255 to correspond to driver values.
     # Since the increase of luminance is rather linear, when driver value increases, that means that to convert we need to do:
-    driver_values = 255*weights
+    driver_values = np.floor(255*weights).astype(int)
    
     # our final driver values for all channels are:
-    print(driver_values)
+    print("driver values: " + str(driver_values))
     
-    changeColors(driver_values, [0]*(6-N)) # The meaning of this '[0]*(6-N)' is to fill the driver values of the channels we didn't use, with zero.
+    arguments = np.pad(driver_values, (0,6-N), 'constant', constant_values=(0))
+    print("arguments: " + str(arguments))
+    changeColors(*arguments) # The meaning of this '[0]*(6-N)' is to fill the driver values of the channels we didn't use, with zero.
 
     # next step is to use the jeti and measure the spd of the calculated color, that is trying to match the target color. :)
     spd_mixed_measured = sp.get_spd(manufacturer = 'jeti') 
@@ -178,29 +188,28 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
 
     # find spectral radiance
     sr_mixed_measured = lx.spd_to_power(spd_mixed_measured, ptype='ru')
-    print("S. Radiance of mixed color: " + sr_mixed_measured)
+    print("S. Radiance of mixed color: " + str(sr_mixed_measured))
 
     # compare Yxy coordinates of both colors
     Yxy_mixed_measured = lx.xyz_to_Yxy(XYZ_mixed_measured) # mixed color
     target_x_y = 1/3 # EEW -> 1/3 target color
-    print('Target: ' + Yxy_eew)
-    print('Result: ' + Yxy_mixed_measured)
+    print('Target: ' + str(Yxy_eew))
+    print('Result: ' + str(Yxy_mixed_measured))
 
     # plot chromaticity diagram
     axh = lx.plotSL(cspace='Yuv', cieobs='1964_10', show=False, BBL=True, DL=True, diagram_colors=True)
-    Y,u,v = lx.xyz_to_Yuv(XYZ_mixed_measured)
-    lx.plot_color_data(u,v,formatstr='go', axh=axh)
+    Yuv = lx.xyz_to_Yuv(XYZ_mixed_measured)
+    print(Yuv)
+    lx.plot_color_data(Yuv[0][1], Yuv[0][2], formatstr='go', axh=axh) # Yuv[0][1]: u, Yuv[0][2]: v, again, kevin's function return a 2D array, and we need only 1 dimension, that's why we use Yuv[0].
 
     # Make ellipses
     v_mac = lx.deltaE.get_macadam_ellipse(nsteps=10)
     lx.plotellipse(v_mac, axh=axh, show=True, cspace_out='Yuv', line_style='-', line_color='w', line_width=1.5)
 
     # Estimate Macadam ellipses:
-    v_mac_est = lx.deltaE.get_macadam_ellipse(xy = Yxy_mixed_measured[1:], nsteps = 10)
+    # v_mac_est = lx.deltaE.get_macadam_ellipse(xy = Yxy_mixed_measured[1:], nsteps = 10)
 
-    lx.plotellipse(v_mac_est, axh = axh, show = True, cspace_out = 'Yuv',\
-            line_style = '-', line_color ='w', line_width = 1.5,\
-            plot_center = True, center_marker = '.', center_color = 'w', center_markersize = 6)
+    # lx.plotellipse(v_mac_est, axh = axh, show = True, cspace_out = 'Yuv', line_style = '-', line_color ='w', line_width = 1.5, plot_center = True, center_marker = '.', center_color = 'w', center_markersize = 6)
 
 # xyzt3 = np.atleast_2d((xyzp[p3,:].T@wp3).T) -> array.T : transpose. array@array : matrix multiplication
 
@@ -226,7 +235,7 @@ dmx = Controller(my_port)
 
 sp.init('jeti')
 
-# changeColors(255,0,0,0,0,0) # just a test
+changeColors(255,0,0,0,0,0) # just a test
 
 # LINUX TIP (to find port): 'sudo -i', 'ls /dev' (compare before and after USB device is plugged, to find the correct port). If access is denied do: 'sudo chmod a+rw /dev/ttyUSB0'
 
@@ -240,5 +249,6 @@ normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_mea
 dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
 #dv_to_lum, lum_to_dv = interpolate_luminances(luminances)
 
-task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, copy.deepcopy(array_measured_spectra))
+N = 3 # number of colors/channels we want to mix
+task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array)
 # print(x(51),y) # to test the interpolation
