@@ -1,4 +1,5 @@
 from DMXEnttecPro import Controller
+from DMXEnttecPro.utils import get_port_by_serial_number, get_port_by_product_id
 from luxpy.toolboxes import spectro as sp# import jeti
 import luxpy as lx
 import matplotlib.pyplot as plt
@@ -6,7 +7,7 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 import math
 from luxpy.toolboxes import spdbuild as spb
-
+import copy
 
 # _______________________________________________________________________
 # _____________________________TASK 1____________________________________
@@ -31,14 +32,14 @@ def changeColors(*args):
 
 # Measure spectra of all channels (maybe not UV)
 def auto_measure(UV_on, step):
-    array_measured_spectra = [] # in the end it will be [5 or 6]x[255/step]
+    array_measured_spectra = [] # in the end it will be [5 or 6]x[255/step]x[471] (471: wavelength steps, like [450, 455,...678,680..])
     wavelengths_array = [] # stores the wavelengths spectrum (eg [480, 485, 450......675, 680])
     wl_saved = False # boolean variable useful for saving the spectrum of wavelengths only once
 
     if UV_on:
         end = 6 # UV on
     else:
-        end = 1 # UV off # TODO: change it back to '5', when everythign is done
+        end = 3 # UV off # TODO: change it back to '5', when everythign is done
 
     # For every channel:
     for i in range(end):
@@ -166,25 +167,28 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
     # Since the increase of luminance is rather linear, when driver value increases, that means that to convert we need to do:
     driver_values = 255*weights
    
-
     # our final driver values for all channels are:
     print(driver_values)
+    
     changeColors(driver_values, [0]*(6-N)) # The meaning of this '[0]*(6-N)' is to fill the driver values of the channels we didn't use, with zero.
-    # next step is to use the jeti and measure the spd of the calculated color, that is trying to match the target color. :)
-    spd = sp.get_spd(manufacturer = 'jeti') 
-    XYZ = lx.spd_to_xyz(spd, cieobs='1964_10', relative=False)
-    # find spectral radiance
-    sr = lx.spd_to_power(spd, ptype='ru')
-    print("S. Radiance: " + sr)
-    Yxy = lx.xyz_to_Yxy(XYZ)
 
-    target_x_y = 1/3 # EEW -> 1/3
-    print('Target: 100, ' + target_x_y + ", " + target_x_y)
-    print('Result: ' + Yxy)
+    # next step is to use the jeti and measure the spd of the calculated color, that is trying to match the target color. :)
+    spd_mixed_measured = sp.get_spd(manufacturer = 'jeti') 
+    XYZ_mixed_measured = lx.spd_to_xyz(spd_mixed_measured, cieobs='1964_10', relative=False)
+
+    # find spectral radiance
+    sr_mixed_measured = lx.spd_to_power(spd_mixed_measured, ptype='ru')
+    print("S. Radiance of mixed color: " + sr_mixed_measured)
+
+    # compare Yxy coordinates of both colors
+    Yxy_mixed_measured = lx.xyz_to_Yxy(XYZ_mixed_measured) # mixed color
+    target_x_y = 1/3 # EEW -> 1/3 target color
+    print('Target: ' + Yxy_eew)
+    print('Result: ' + Yxy_mixed_measured)
 
     # plot chromaticity diagram
     axh = lx.plotSL(cspace='Yuv', cieobs='1964_10', show=False, BBL=True, DL=True, diagram_colors=True)
-    Y,u,v = lx.xyz_to_Yuv(XYZ)
+    Y,u,v = lx.xyz_to_Yuv(XYZ_mixed_measured)
     lx.plot_color_data(u,v,formatstr='go', axh=axh)
 
     # Make ellipses
@@ -192,7 +196,7 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
     lx.plotellipse(v_mac, axh=axh, show=True, cspace_out='Yuv', line_style='-', line_color='w', line_width=1.5)
 
     # Estimate Macadam ellipses:
-    v_mac_est = lx.deltaE.get_macadam_ellipse(xy = Yxy[1:], nsteps = 10)
+    v_mac_est = lx.deltaE.get_macadam_ellipse(xy = Yxy_mixed_measured[1:], nsteps = 10)
 
     lx.plotellipse(v_mac_est, axh = axh, show = True, cspace_out = 'Yuv',\
             line_style = '-', line_color ='w', line_width = 1.5,\
@@ -211,26 +215,30 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
 # _____________________________MAIN SCRIPT_______________________________
 # _______________________________________________________________________
 
-
-# call function to measure all channels, with UV off, and print result.
-# it should be a 5x17 array. (17, because we took intervals of 15 while testing different driver values for each channel: 0-255)
-
 # ___INITIALIZE DMX AND JETI___
 #dmx = Controller("/dev/ttyUSB0")  # Typical of Linux
-dmx = Controller("COM7") # Typical of Windows
+#dmx = Controller("COM7") # Typical of Windows
+
 # can use dmx function to find serial port, it's on the site
+# my_port = get_port_by_serial_number('EN055555A') -> doesn't work
+my_port = get_port_by_product_id(24577)
+dmx = Controller(my_port)
+
 sp.init('jeti')
+
+# changeColors(255,0,0,0,0,0) # just a test
 
 # LINUX TIP (to find port): 'sudo -i', 'ls /dev' (compare before and after USB device is plugged, to find the correct port). If access is denied do: 'sudo chmod a+rw /dev/ttyUSB0'
 
 measurement_step = 51 #  integer divisions of 255. The more the better the results, but more time costly
 
 array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
-normalized_luminances, luminances = make_luminance_plots(array_measured_spectra, wavelengths_array, measurement_step) # size: channels x measurements
+
+normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step) # size: channels x measurements
 # print(" SIZEEE :" + str(np.array(n_l).shape))
 
 dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
 #dv_to_lum, lum_to_dv = interpolate_luminances(luminances)
 
-task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, array_measured_spectra)
+task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, copy.deepcopy(array_measured_spectra))
 # print(x(51),y) # to test the interpolation
