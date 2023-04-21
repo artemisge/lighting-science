@@ -7,6 +7,7 @@ from scipy.interpolate import CubicSpline
 import math
 from luxpy.toolboxes import spdbuild as spb
 
+
 # _______________________________________________________________________
 # _____________________________TASK 1____________________________________
 # _______________________________________________________________________
@@ -29,7 +30,7 @@ def changeColors(*args):
 # _______________________________________________________________________
 
 # Measure spectra of all channels (maybe not UV)
-def auto_measure(UV_on):
+def auto_measure(UV_on, step):
     array_measured_spectra = [] # in the end it will be [5 or 6]x[255/step]
     wavelengths_array = [] # stores the wavelengths spectrum (eg [480, 485, 450......675, 680])
     wl_saved = False # boolean variable useful for saving the spectrum of wavelengths only once
@@ -136,38 +137,35 @@ def interpolate_luminances(array_luminances, step):
 # _______________________________________________________________________
 
 # takes as arguments the interpolation functions that we calculated at task2. (Reminder: driver value to luminance | luminance to driver value, for every channel. So dv_to_lum[0](255) will return the luminance of red channel for driver value of 255.) AND measurement step AND number of channels to mix
-def task3(dv_to_lum, lum_to_dv, step, N):
+def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra):
     t_l = 100 # Target Luminance: find the correct driver values for R,G,B that have luminance = 100 (or as close to 100)
 
     # EEW tristimulous values are XYZ = [100,100,100]
     # EEW chromaticity coordinates are x,y = [1/3, 1/3]
     # EEW Yxy coordinates are Y,x,y = [100,1/3,1/3]
     Yxy_eew = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
-    
-    driver_values = []
 
-    # We want to find the chromaticity coordinates of each channel that have luminance = 100, to match the target's.
-    # We will use the interpolated functions
-
-    # For every channel we want to mix, save the driver value for this channel that gives a luminance = 100:
+    # We want the spds of all the primaries, but for every channel/primary,we have many different spds, given a driver value. We want to take the measurement with the higher driver value, which is the max lumimance we can get.
+    # We are going to stack all of max-spds of the primaries into the variable below
+    spd_p = []
+    # For every primary/channel:
     for i in range(N):
-        driver_values.append(lum_to_dv[i](100))
+        # We know that the last measurement has the higher driver value, so it will be on the last element of the array.
+        # A python way to get the last element is: some_list[-1]
+        max_spd = array_measured_spectra[i][-1]
+        spd_p.append(max_spd)
 
-    # ____OLD TRIAL____
-    # #saved_colors = []
-    # #total_measurements = len(array_measured_spectra[0][0]) # number of all measurements for every channel (=471)
-    # for i in range(3):
-    #     # we only want RGB channels -> (0,1,2)
-    #     for j in range(total_measurements):
-    #         spd = array_measured_spectra[i][j]
-    #         XYZ = lx.spd_to_xyz(spd, cieobs='1964_10', relative=False)
+    # Now we convert the stacked-spd of the primaries into Yxy coordinates
+    XYZp = lx.spd_to_xyz(spd_p)
+    Yxyp = lx.xyz_to_Yxy(XYZp) 
 
-    #         # check if lumimance matches 100, Y = luminance
-    #         if math.isclose(XYZ[1], 100, abs_tol=0.5):
-    #             # good job :)
-    #             saved_colors.append(XYZ)
-    #             driver_values.append(j*255/step)
-    #             break
+    # We need to solve w[] = Cp^-1 * Ct[], where w[]: weights vector, Cp^-1: inverse of primaries Yxy coords, and Ct[]: target color vector Yxy coords.
+    weights = spb.colormixer_pinv(Yxy_eew,Yxyp,input_fmt='Yxy') # mixing using Yxy
+    
+    # weights are on a scale of 0-1. We need to convert them into a scale of 0-255 to correspond to driver values.
+    # Since the increase of luminance is rather linear, when driver value increases, that means that to convert we need to do:
+    driver_values = 255*weights
+   
 
     # our final driver values for all channels are:
     print(driver_values)
@@ -220,18 +218,19 @@ def task3(dv_to_lum, lum_to_dv, step, N):
 # ___INITIALIZE DMX AND JETI___
 #dmx = Controller("/dev/ttyUSB0")  # Typical of Linux
 dmx = Controller("COM7") # Typical of Windows
+# can use dmx function to find serial port, it's on the site
 sp.init('jeti')
 
 # LINUX TIP (to find port): 'sudo -i', 'ls /dev' (compare before and after USB device is plugged, to find the correct port). If access is denied do: 'sudo chmod a+rw /dev/ttyUSB0'
 
-measurement_step = 51 #  integral divisions of 255. The more the better the results, but more time costly
+measurement_step = 51 #  integer divisions of 255. The more the better the results, but more time costly
 
-array_measured_spectra, wavelengths_array = auto_measure(False)
+array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
 normalized_luminances, luminances = make_luminance_plots(array_measured_spectra, wavelengths_array, measurement_step) # size: channels x measurements
 # print(" SIZEEE :" + str(np.array(n_l).shape))
 
 dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
 #dv_to_lum, lum_to_dv = interpolate_luminances(luminances)
 
-task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step)
+task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, array_measured_spectra)
 # print(x(51),y) # to test the interpolation
