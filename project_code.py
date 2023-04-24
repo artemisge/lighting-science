@@ -39,13 +39,21 @@ def auto_measure(UV_on, step):
     if UV_on:
         end = 6 # UV on
     else:
-        end = 5 # UV off # TODO: change it back to '5', when everythign is done
+        end = 3 # UV off # TODO: change it back to '5', when everythign is done
 
     # For every channel:
     for i in range(end):
         channel_array = [] # array to keep all the spds of this particular channel
         # For each measurement: (#measurements=255/step)
-        for j in range(0, 255+1, step):
+
+        DMX_arguments_tmp_array = [0]*6
+        DMX_arguments_tmp_array[i] = 5
+        changeColors(*DMX_arguments_tmp_array)
+        # after changing the lamp colors, measure the spd:
+        spd = sp.get_spd(manufacturer='jeti')
+        channel_array.append(spd[1])
+
+        for j in range(step, 255+1, step):
             # initialize all the drivers values to zero -> [0,0,0,0,0,0].
             DMX_arguments_tmp_array = [0]*6
             # we will measure every channel, increasing the value (0-255) with an interval/step.
@@ -138,7 +146,7 @@ def interpolate_luminances(array_luminances, step):
 # _______________________________________________________________________
 
 # takes as arguments the interpolation functions that we calculated at task2. (Reminder: driver value to luminance | luminance to driver value, for every channel. So dv_to_lum[0](255) will return the luminance of red channel for driver value of 255.) AND measurement step AND number of channels to mix
-def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_array):
+def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_array, luminances):
     t_l = 100 # Target Luminance: find the correct driver values for R,G,B that have luminance = 100 (or as close to 100)
 
     # EEW tristimulous values are XYZ = [100,100,100]
@@ -173,7 +181,13 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
 
     # weights are on a scale of 0-1. We need to convert them into a scale of 0-255 to correspond to driver values.
     # Since the increase of luminance is rather linear, when driver value increases, that means that to convert we need to do:
-    driver_values = np.floor(255*weights).astype(int)
+    driver_values = []
+    for i in range(N):
+      luminance_of_channel = np.array(luminances[i]).max()
+      print("luminance of channel:" + str(luminance_of_channel))
+      weighted_luminance_of_channel = luminance_of_channel*weights[i]
+      print("weighted luminance: " + str(weighted_luminance_of_channel))
+      driver_values.append(np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int))
    
     # our final driver values for all channels are:
     print("driver values: " + str(driver_values))
@@ -244,10 +258,11 @@ array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step
 
 normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step) # size: channels x measurements
 # print(" SIZEEE :" + str(np.array(n_l).shape))
+print("luminancs: " + str(luminances))
 
-dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
-#dv_to_lum, lum_to_dv = interpolate_luminances(luminances)
+# dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
+dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step)
 
-N = 5 # number of colors/channels we want to mix
-task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array)
+N = 3 # number of colors/channels we want to mix
+task3(dv_to_lum, lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
 # print(x(51),y) # to test the interpolation
