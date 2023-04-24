@@ -283,12 +283,12 @@ def spd_to_cris(spd):
 def optimize(method):
     return
 
-def task4(array_measured_spectra, wavelengths_array, N):
+def task4(lum_to_dv, measurement_step, N, array_measured_spectra, wavelengths_array, luminances):
     # TARGET/EEW info
     spd_p = get_stacked_spd(array_measured_spectra, wavelengths_array, N)
     t_l = 100
     XYZ_eew = np.array([[t_l,t_l,t_l]])
-    Yxy_eew = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
+    target = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
     
     # optimize parameters
     cieobs = '1964_10'
@@ -297,9 +297,10 @@ def task4(array_measured_spectra, wavelengths_array, N):
     method = 'Nelder-Mead'
 
     # start optimization:
-    so1 = spb.SpectralOptimizer(target = Yxy_eew, tar_type = 'Yxy', cspace_bwtf = {},
+    so1 = spb.SpectralOptimizer(target = target, tar_type = 'Yxy', cspace_bwtf = {},
                                 nprim = N, wlr = [360,830,1], cieobs = cieobs, 
                                 optimizer_type = '3mixer',
+                                prim_constructor = None, 
                                 prims = spd_p, 
                                 obj_fcn = spb.ObjFcns(f=obj_fcn, ft = obj_tar_vals),
                                 minimizer = spb.Minimizer(method=method),
@@ -326,6 +327,45 @@ def task4(array_measured_spectra, wavelengths_array, N):
     plt.figure()
     lx.SPD(S).plot()
 
+    driver_values = []
+    for i in range(N):
+    #   print("test" + str(S[i+1]))
+      luminance_of_channel = np.array(luminances[i]).max()
+    #   luminance_of_channel = lx.spd_to_power(S[i+1], 'pu')  #first element is wavelengths
+     # print("luminance of channel:" + str(luminance_of_channel))
+      #print("M array: " + str(M))
+      weighted_luminance_of_channel = luminance_of_channel*M[0][i] # M for some reason returns a 2D array, so we take the M[0] for only 1 dimension
+      #print("weighted luminance: " + str(weighted_luminance_of_channel))
+      #print(lum_to_dv[i](weighted_luminance_of_channel))
+      arg = np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int)
+      if arg > 255:
+          arg = 255
+      driver_values.append(arg)
+    #print("driver values: " + str(driver_values))
+
+    arguments = np.pad(driver_values, (0,6-N), 'constant', constant_values=(0))
+    print("arguments: " + str(arguments))
+
+    changeColors(*arguments) # The meaning of this '[0]*(6-N)' is to fill the driver values of the channels we didn't use, with zero.
+
+    # next step is to use the jeti and measure the spd of the calculated color, that is trying to match the target color. :)
+    spd_optimized_mixed_measured = sp.get_spd(manufacturer = 'jeti') 
+    XYZ_optimized_mixed_measured = lx.spd_to_xyz(spd_optimized_mixed_measured, cieobs='1964_10', relative=False)
+
+    # find spectral radiance
+    sr_optimized_mixed_measured = lx.spd_to_power(spd_optimized_mixed_measured, ptype='ru')
+    print("S. Radiance of optimized mixed color: " + str(sr_optimized_mixed_measured))
+
+
+     # plot chromaticity diagram
+    axh = lx.plotSL(cspace='Yuv', cieobs='1964_10', show=False, BBL=True, DL=True, diagram_colors=True)
+    optimized_Yuv = lx.xyz_to_Yuv(XYZ_optimized_mixed_measured)
+    print(optimized_Yuv)
+    lx.plot_color_data(optimized_Yuv[0][1], optimized_Yuv[0][2], formatstr='go', axh=axh) # Yuv[0][1]: u, Yuv[0][2]: v, again, kevin's function return a 2D array, and we need only 1 dimension, that's why we use Yuv[0].
+
+    # Make ellipses
+    v_mac = lx.deltaE.get_macadam_ellipse(nsteps=10)
+    lx.plotellipse(v_mac, axh=axh, show=True, cspace_out='Yuv', line_style='-', line_color='w', line_width=1.5)
 
     return
 
@@ -351,7 +391,7 @@ sp.init('jeti')
 
 measurement_step = 51 #  integer divisions of 255. The more the better the results, but more time costly
 
-file_saved = False
+file_saved = True
 if not file_saved:
     array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
     save_file_measurements(array_measured_spectra, 'array_measured_spectra.npy')
@@ -369,4 +409,5 @@ dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step)
 
 N = 4 # number of colors/channels we want to mix
 task3(dv_to_lum, lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
+task4(lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
 # print(x(51),y) # to test the interpolation
