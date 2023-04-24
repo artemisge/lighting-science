@@ -39,7 +39,7 @@ def auto_measure(UV_on, step):
     if UV_on:
         end = 6 # UV on
     else:
-        end = 3 # UV off # TODO: change it back to '5', when everythign is done
+        end = 5 # UV off # TODO: change it back to '5', when everythign is done
 
     # For every channel:
     for i in range(end):
@@ -192,7 +192,6 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
 
     # compare Yxy coordinates of both colors
     Yxy_mixed_measured = lx.xyz_to_Yxy(XYZ_mixed_measured) # mixed color
-    target_x_y = 1/3 # EEW -> 1/3 target color
     print('Target: ' + str(Yxy_eew))
     print('Result: ' + str(Yxy_mixed_measured))
 
@@ -235,7 +234,7 @@ dmx = Controller(my_port)
 
 sp.init('jeti')
 
-changeColors(255,0,0,0,0,0) # just a test
+# changeColors(255,0,0,0,0,0) # just a test
 
 # LINUX TIP (to find port): 'sudo -i', 'ls /dev' (compare before and after USB device is plugged, to find the correct port). If access is denied do: 'sudo chmod a+rw /dev/ttyUSB0'
 
@@ -249,6 +248,6 @@ normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_mea
 dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
 #dv_to_lum, lum_to_dv = interpolate_luminances(luminances)
 
-N = 3 # number of colors/channels we want to mix
+N = 5 # number of colors/channels we want to mix
 task3(dv_to_lum_norma, lum_to_dv_norma, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array)
 # print(x(51),y) # to test the interpolation
