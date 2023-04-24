@@ -39,7 +39,7 @@ def auto_measure(UV_on, step):
     if UV_on:
         end = 6 # UV on
     else:
-        end = 3 # UV off # TODO: change it back to '5', when everythign is done
+        end = 5 # UV off # TODO: change it back to '5', when everythign is done
 
     # For every channel:
     for i in range(end):
@@ -97,11 +97,16 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
 
         # now we have all luminances for all measurements for different driver values for this specific i-channel. And we'll make a plot
         x = [i for i in range(0, 255+1, step)]
+        x.insert(1,5)#insert 5 dv in 1 index
+        print("len x:" + str(len(x)))
+        array_luminance_i.insert(0,0)
+        # np.insert(array_luminance_i,0,0)
+        print(len(array_luminance_i))
         plt.plot(x, array_luminance_i, **{'color': 'lightsteelblue', 'marker': 'o'})
         plt.xlabel('Driver Values')
         plt.ylabel('Luminance')
         plt.title('Luminance for different driver values')
-        plt.show() # 1 plot per channel
+        # plt.show() # 1 plot per channel
         array_luminances.append(array_luminance_i)
 
         # also do the normalized luminance (to the max luminance of each channel)
@@ -115,7 +120,7 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
         plt.xlabel('Driver Values')
         plt.ylabel('Normalized Luminance')
         plt.title('Normalized Luminance for different driver values')
-        plt.show() # 1 plot per channel
+        # plt.show() # 1 plot per channel
     # print(array_normalized_luminances)
     return array_normalized_luminances, array_luminances
 
@@ -125,7 +130,10 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
 # Argument 'step' is the step that we increased the driver values to make measurements in task 2.
 def interpolate_luminances(array_luminances, step):
     # make sample points of driver values, according to the measurements that we did on task 2.
-    driver_value = [i for i in range(0, 255+1, step)]
+    driver_value = [i for i in range(step, 255+1, step)]
+    driver_value.insert(0,5)
+    driver_value.insert(0,0)
+
     # dv_to_lum -> give driver value to find luminance
     # lum_to_dv -> give luminance to find driver value
     dv_to_lum = []
@@ -133,8 +141,11 @@ def interpolate_luminances(array_luminances, step):
 
     # For every channel:
     for i in range(len(array_luminances)):
+        np.insert(array_luminances, 0, 0)
         dv_to_lum.append(CubicSpline(driver_value, array_luminances[i]))
         lum_to_dv.append(CubicSpline(array_luminances[i], driver_value))
+    
+    
     return dv_to_lum, lum_to_dv
 
 # HOW ABOVE INTERPOLATION WORKS:
@@ -145,18 +156,7 @@ def interpolate_luminances(array_luminances, step):
 # _____________________________TASK 3____________________________________
 # _______________________________________________________________________
 
-# takes as arguments the interpolation functions that we calculated at task2. (Reminder: driver value to luminance | luminance to driver value, for every channel. So dv_to_lum[0](255) will return the luminance of red channel for driver value of 255.) AND measurement step AND number of channels to mix
-def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_array, luminances):
-    t_l = 100 # Target Luminance: find the correct driver values for R,G,B that have luminance = 100 (or as close to 100)
-
-    # EEW tristimulous values are XYZ = [100,100,100]
-    # EEW chromaticity coordinates are x,y = [1/3, 1/3]
-    # EEW Yxy coordinates are Y,x,y = [100,1/3,1/3]
-    Yxy_eew = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
-    print("Yxy eew: " + str(Yxy_eew))
-
-    # We want the spds of all the primaries, but for every channel/primary,we have many different spds, given a driver value. We want to take the measurement with the higher driver value, which is the max lumimance we can get.
-    # We are going to stack all of max-spds of the primaries into the variable below
+def get_stacked_spd(array_measured_spectra, wavelengths_array, N):
     spd_p = []
     # For every primary/channel:
     for i in range(N):
@@ -167,11 +167,51 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
         spd_p.append(max_spd)
     spd_p.insert(0, wavelengths_array)
     spd_p = np.array(spd_p)
+    return spd_p
+
+def save_file_measurements(spd, filename):
+    # spdx_dict = copy.copy(lx._SPDX_TEMPLATE)
+    # spdx_dict['SpectralDistribution']['SpectralData'] = spd
+    # spdx_xml = lx.write_spdx(spdx_dict, filename = 'measurements.spdx')
+    np.save(filename, spd)
+
+
+def read_file_measurements(filename):
+    # spdx_xml_from_file = lx.read_spdx('measurements.spdx')
+    # return spdx_xml_from_file['SpectralDistribution']['SpectralData']
+    return np.load(filename)
+
+# takes as arguments the interpolation functions that we calculated at task2. (Reminder: driver value to luminance | luminance to driver value, for every channel. So dv_to_lum[0](255) will return the luminance of red channel for driver value of 255.) AND measurement step AND number of channels to mix
+def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_array, luminances):
+    t_l = 100 # Target Luminance: find the correct driver values for R,G,B that have luminance = 100 (or as close to 100)
+
+    #for red channel see plot
+    # x = [i for i in range(0,256)]
+    # y = [dv_to_lum[1](i) for i in range(0,256)]
+
+    # max = np.max(np.array(lum_to_dv[1]))
+    y = []
+    for i in range(0,1000,5):
+        y.append(lum_to_dv[1](i))
+    x = [i for i in range(0,1000,5)]
+    plt.clf()
+    plt.plot(x, y, **{'color': 'lightsteelblue', 'marker': 'o'})
+    plt.show()
+
+    # EEW tristimulous values are XYZ = [100,100,100]
+    # EEW chromaticity coordinates are x,y = [1/3, 1/3]
+    # EEW Yxy coordinates are Y,x,y = [100,1/3,1/3]
+    Yxy_eew = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
+    print("Yxy eew: " + str(Yxy_eew))
+
+    # We want the spds of all the primaries, but for every channel/primary,we have many different spds, given a driver value. We want to take the measurement with the higher driver value, which is the max lumimance we can get.
+    # We are going to stack all of max-spds of the primaries into the variable below
+    spd_p = get_stacked_spd(array_measured_spectra, wavelengths_array, N)
     # print(spd_p)
     # print(spd_p.shape)
 
     # Now we convert the stacked-spd of the primaries into Yxy coordinates
-    XYZp = lx.spd_to_xyz(spd_p)
+    XYZp = lx.spd_to_xyz(spd_p, cieobs='1964_10', relative=False)
     Yxyp = lx.xyz_to_Yxy(XYZp) 
     print("Yxy primaries: " + str(Yxyp))
 
@@ -187,7 +227,11 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
       print("luminance of channel:" + str(luminance_of_channel))
       weighted_luminance_of_channel = luminance_of_channel*weights[i]
       print("weighted luminance: " + str(weighted_luminance_of_channel))
-      driver_values.append(np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int))
+      print(lum_to_dv[i](weighted_luminance_of_channel))
+      arg = np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int)
+      if arg > 255:
+          arg = 255
+      driver_values.append(arg)
    
     # our final driver values for all channels are:
     print("driver values: " + str(driver_values))
@@ -231,7 +275,60 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
 # _______________________________________________________________________
 
 
-# TODO
+# define function that calculates several objectives at the same time (for speed):
+def spd_to_cris(spd):
+    Rf,Rg = lx.cri.spd_to_cri(spd, cri_type='ies-tm30',out='Rf,Rg')
+    return np.vstack((Rf, Rg))  
+
+def optimize(method):
+    return
+
+def task4(array_measured_spectra, wavelengths_array, N):
+    # TARGET/EEW info
+    spd_p = get_stacked_spd(array_measured_spectra, wavelengths_array, N)
+    t_l = 100
+    XYZ_eew = np.array([[t_l,t_l,t_l]])
+    Yxy_eew = lx.xyz_to_Yxy(np.array([[t_l,t_l,t_l]]))
+    
+    # optimize parameters
+    cieobs = '1964_10'
+    obj_fcn = [(spd_to_cris,'Rf','Rg')]
+    obj_tar_vals = [(90,110)]
+    method = 'Nelder-Mead'
+
+    # start optimization:
+    so1 = spb.SpectralOptimizer(target = Yxy_eew, tar_type = 'Yxy', cspace_bwtf = {},
+                                nprim = N, wlr = [360,830,1], cieobs = cieobs, 
+                                optimizer_type = '3mixer',
+                                prims = spd_p, 
+                                obj_fcn = spb.ObjFcns(f=obj_fcn, ft = obj_tar_vals),
+                                minimizer = spb.Minimizer(method=method),
+                                verbosity = 0)
+
+    # start optimization and request optimized spectra spds and primary fluxes M as output:
+    S,M = so1.start(out = 'spds,Ms')
+    # Check output agrees with target:
+    xyz = lx.spd_to_xyz(S, relative = False, cieobs = cieobs)
+    Yxy = lx.xyz_to_Yxy(xyz)
+    cct,duv = lx.xyz_to_cct(xyz, cieobs = cieobs, out = 'cct,duv')
+    Rf, Rg = spd_to_cris(S)
+    print('\nResults (optim,target):')
+    print(Rf.shape,Rf)
+    print(obj_tar_vals[0][0])
+    print("Yxy: ([{:1.0f},{:1.2f},{:1.2f}],[{:1.0f},{:1.2f},{:1.2f}])".format(Yxy[0,0],Yxy[0,1],Yxy[0,2],target[0,0],target[0,1],target[0,2]))
+    print("Rf: ({:1.2f},{:1.2f})".format(Rf[0], obj_tar_vals[0][0]))
+    print("Rg: ({:1.2f}, {:1.2f})".format(Rg[0], obj_tar_vals[0][1]))
+    print("cct(K), duv: ({:1.1f},{:1.4f})".format(cct[0,0], duv[0,0]))
+
+    print('\nFlux ratios of component spectra:', M)
+
+    #plot spd:
+    plt.figure()
+    lx.SPD(S).plot()
+
+
+    return
+
 
 # _______________________________________________________________________
 # _____________________________MAIN SCRIPT_______________________________
@@ -254,7 +351,14 @@ sp.init('jeti')
 
 measurement_step = 51 #  integer divisions of 255. The more the better the results, but more time costly
 
-array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
+file_saved = False
+if not file_saved:
+    array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
+    save_file_measurements(array_measured_spectra, 'array_measured_spectra.npy')
+    save_file_measurements(wavelengths_array, 'wavelengths_array.npy')
+else:
+    array_measured_spectra = read_file_measurements('array_measured_spectra.npy')
+    wavelengths_array = read_file_measurements('wavelengths_array.npy')
 
 normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step) # size: channels x measurements
 # print(" SIZEEE :" + str(np.array(n_l).shape))
@@ -263,6 +367,6 @@ print("luminancs: " + str(luminances))
 # dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
 dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step)
 
-N = 3 # number of colors/channels we want to mix
+N = 4 # number of colors/channels we want to mix
 task3(dv_to_lum, lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
 # print(x(51),y) # to test the interpolation
