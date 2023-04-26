@@ -377,12 +377,11 @@ def task4(lum_to_dv, measurement_step, N, array_measured_spectra, wavelengths_ar
     spd_optimized_mixed_measured = sp.get_spd(manufacturer = 'jeti') 
     XYZ_optimized_mixed_measured = lx.spd_to_xyz(spd_optimized_mixed_measured, cieobs='1964_10', relative=False)
 
-    # find spectral radiance
+    # find spectral radiance INTEGRAL
     sr_optimized_mixed_measured = lx.spd_to_power(spd_optimized_mixed_measured, ptype='ru')
     print("S. Radiance of optimized mixed color: " + str(sr_optimized_mixed_measured))
 
-
-     # plot chromaticity diagram
+    # plot chromaticity diagram
     axh = lx.plotSL(cspace='Yuv', cieobs='1964_10', show=False, BBL=True, DL=True, diagram_colors=True)
     optimized_Yuv = lx.xyz_to_Yuv(XYZ_optimized_mixed_measured)
     print(optimized_Yuv)
@@ -394,45 +393,49 @@ def task4(lum_to_dv, measurement_step, N, array_measured_spectra, wavelengths_ar
 
     return
 
+# gets spd measuring data either from file, or from measuring with task 2
+def get_spd_data(file_saved, measurement_step):
+    if not file_saved:
+        array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
+        save_file_measurements(array_measured_spectra, 'array_measured_spectra.npy')
+        save_file_measurements(wavelengths_array, 'wavelengths_array.npy')
+    else:
+        array_measured_spectra = read_file_measurements('array_measured_spectra.npy')
+        wavelengths_array = read_file_measurements('wavelengths_array.npy')
+
+    return array_measured_spectra, wavelengths_array
 
 # _______________________________________________________________________
 # _____________________________MAIN SCRIPT_______________________________
 # _______________________________________________________________________
 
-# ___INITIALIZE DMX AND JETI___
-#dmx = Controller("/dev/ttyUSB0")  # Typical of Linux
-#dmx = Controller("COM7") # Typical of Windows
+def main():
+    # ___INITIALIZE DMX AND JETI___
+    #dmx = Controller("/dev/ttyUSB0")  # Typical of Linux
+    #dmx = Controller("COM7") # Typical of Windows
+    # LINUX TIP (to find port): 'sudo -i', 'ls /dev' (compare before and after USB device is plugged, to find the correct port). If access is denied do: 'sudo chmod a+rw /dev/ttyUSB0'
 
-# can use dmx function to find serial port, it's on the site
-# my_port = get_port_by_serial_number('EN055555A') -> doesn't work
-my_port = get_port_by_product_id(24577)
-dmx = Controller(my_port)
+    # can use dmx function to find serial port, it's on the site
+    # my_port = get_port_by_serial_number('EN055555A') -> doesn't work
+    my_port = get_port_by_product_id(24577)
+    dmx = Controller(my_port)
 
-sp.init('jeti')
+    sp.init('jeti')
 
-# changeColors(255,0,0,0,0,0) # just a test
+    # options
+    measurement_step = 51 #  integer divisions of 255. The more the better the results, but more time costly
+    file_saved = True
 
-# LINUX TIP (to find port): 'sudo -i', 'ls /dev' (compare before and after USB device is plugged, to find the correct port). If access is denied do: 'sudo chmod a+rw /dev/ttyUSB0'
+    array_measured_spectra, wavelengths_array = get_spd_data(file_saved, measurement_step)
 
-measurement_step = 51 #  integer divisions of 255. The more the better the results, but more time costly
+    normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step) # size: channels x measurements
+    print("luminancs: " + str(luminances))
 
-file_saved = True
-if not file_saved:
-    array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
-    save_file_measurements(array_measured_spectra, 'array_measured_spectra.npy')
-    save_file_measurements(wavelengths_array, 'wavelengths_array.npy')
-else:
-    array_measured_spectra = read_file_measurements('array_measured_spectra.npy')
-    wavelengths_array = read_file_measurements('wavelengths_array.npy')
+    # dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
+    dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step)
 
-normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step) # size: channels x measurements
-# print(" SIZEEE :" + str(np.array(n_l).shape))
-print("luminancs: " + str(luminances))
+    N = 4 # number of colors/channels we want to mix
+    task3(dv_to_lum, lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
+    task4(lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
 
-# dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
-dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step)
-
-N = 4 # number of colors/channels we want to mix
-task3(dv_to_lum, lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
-task4(lum_to_dv, measurement_step, N, copy.deepcopy(array_measured_spectra), wavelengths_array, luminances)
-# print(x(51),y) # to test the interpolation
+main()
