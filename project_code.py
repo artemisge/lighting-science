@@ -156,6 +156,7 @@ def interpolate_luminances(array_luminances, step):
 # _____________________________TASK 3____________________________________
 # _______________________________________________________________________
 
+# takes as arguments the measured spectra for all channels and returns the primary spectra of each channel (it chooses the last measurement of each channel, that means the one with the higher driver value), and stacks on the start of the array the wavelengths array to make it compatible with luxpy functions
 def get_stacked_spd(array_measured_spectra, wavelengths_array, N):
     spd_p = []
     # For every primary/channel:
@@ -169,16 +170,12 @@ def get_stacked_spd(array_measured_spectra, wavelengths_array, N):
     spd_p = np.array(spd_p)
     return spd_p
 
+# saves a numpy array to a file
 def save_file_measurements(spd, filename):
-    # spdx_dict = copy.copy(lx._SPDX_TEMPLATE)
-    # spdx_dict['SpectralDistribution']['SpectralData'] = spd
-    # spdx_xml = lx.write_spdx(spdx_dict, filename = 'measurements.spdx')
     np.save(filename, spd)
 
-
+# takes a filename that contains a numpy array, as an argument, and returns this array after it loads it using a numpy function 
 def read_file_measurements(filename):
-    # spdx_xml_from_file = lx.read_spdx('measurements.spdx')
-    # return spdx_xml_from_file['SpectralDistribution']['SpectralData']
     return np.load(filename)
 
 # takes as arguments the interpolation functions that we calculated at task2. (Reminder: driver value to luminance | luminance to driver value, for every channel. So dv_to_lum[0](255) will return the luminance of red channel for driver value of 255.) AND measurement step AND number of channels to mix
@@ -219,8 +216,7 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
     weights = spb.colormixer_pinv(Yxy_eew,Yxyp,input_fmt='Yxy')[0] # mixing using Yxy, it returns a 2D array, so we use array[0] to get only one dimension
     print("weights: " + str(weights))
 
-    # weights are on a scale of 0-1. We need to convert them into a scale of 0-255 to correspond to driver values.
-    # Since the increase of luminance is rather linear, when driver value increases, that means that to convert we need to do:
+    # (girls, make sure this is theoritically correct:) weights are on a scale of 0-1, and they correspond to the weighted luminance of each channel. We have made a cubic spline interpolation to find the driver value to a luminance value. So the final driver value for each channel that we are going to mix is: the result of the interpolation function lum_to_dv, after we put as input the weighted luminance of this channel (we are selecting the max luminance out of all measured luminances of the channel).
     driver_values = []
     for i in range(N):
       luminance_of_channel = np.array(luminances[i]).max()
@@ -228,7 +224,11 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
       weighted_luminance_of_channel = luminance_of_channel*weights[i]
       print("weighted luminance: " + str(weighted_luminance_of_channel))
       print(lum_to_dv[i](weighted_luminance_of_channel))
+
+      # since interpolation is going to give float result, we use function floor to take the previous integer.
       arg = np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int)
+
+      # if for any reason driver value is larger thatn 255, keep only 255.
       if arg > 255:
           arg = 255
       driver_values.append(arg)
@@ -236,9 +236,10 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
     # our final driver values for all channels are:
     print("driver values: " + str(driver_values))
     
+    # padding the arguments with the right amount of zeros in the end to "fill" all the driver values of channels we didn't use. THe number of these channels is 6-N.
     arguments = np.pad(driver_values, (0,6-N), 'constant', constant_values=(0))
     print("arguments: " + str(arguments))
-    changeColors(*arguments) # The meaning of this '[0]*(6-N)' is to fill the driver values of the channels we didn't use, with zero.
+    changeColors(*arguments)
 
     # next step is to use the jeti and measure the spd of the calculated color, that is trying to match the target color. :)
     spd_mixed_measured = sp.get_spd(manufacturer = 'jeti') 
@@ -250,16 +251,17 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
 
     # compare Yxy coordinates of both colors
     Yxy_mixed_measured = lx.xyz_to_Yxy(XYZ_mixed_measured) # mixed color
-    print('Target: ' + str(Yxy_eew))
-    print('Result: ' + str(Yxy_mixed_measured))
+    print('Target Yxy: ' + str(Yxy_eew))
+    print('Result Yxy: ' + str(Yxy_mixed_measured))
 
     # plot chromaticity diagram
+    # plotSL plots the spectrum locus
     axh = lx.plotSL(cspace='Yuv', cieobs='1964_10', show=False, BBL=True, DL=True, diagram_colors=True)
     Yuv = lx.xyz_to_Yuv(XYZ_mixed_measured)
-    print(Yuv)
+    print("Result Yuv: " + str(Yuv))
     lx.plot_color_data(Yuv[0][1], Yuv[0][2], formatstr='go', axh=axh) # Yuv[0][1]: u, Yuv[0][2]: v, again, kevin's function return a 2D array, and we need only 1 dimension, that's why we use Yuv[0].
 
-    # Make ellipses
+    # Make ellipses: Estimate n-step MacAdam ellipse at CIE x,y coordinates xy by calculating average inverse covariance ellipse of the k_neighbours closest ellipses.
     v_mac = lx.deltaE.get_macadam_ellipse(nsteps=10)
     lx.plotellipse(v_mac, axh=axh, show=True, cspace_out='Yuv', line_style='-', line_color='w', line_width=1.5)
 
