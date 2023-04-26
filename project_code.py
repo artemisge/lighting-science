@@ -79,6 +79,16 @@ def auto_measure(UV_on, step):
     # return all measured spds of all channels -> [5, #measurements, 471] is the size of this array (471: defferent wavelengths spanning across the visible spectrum)
     return array_measured_spectra, wavelengths_array
 
+# since kevin's function isn't working, we make our own, that normalizes the luminances according to the max luminance of each channel. It does the job for ONE channel at a time.
+def normalize_max(array_luminance_i):
+    normalized_luminances = []
+    max = max(array_luminance_i)
+
+    # divide all elements of array with max, to normalize
+    normalized_luminances = array_luminance_i / max
+    return normalized_luminances
+
+
 # takes as an arguments the array that was calculated in the previous function: all the spds for every channel AND the array of the wavelengths spectrum AND the measurement step
 # and returns the normalized luminances array of size: [#channels, #measurements] AND the non-normalized luminances
 def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
@@ -106,11 +116,12 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
         plt.xlabel('Driver Values')
         plt.ylabel('Luminance')
         plt.title('Luminance for different driver values')
-        # plt.show() # 1 plot per channel
+        plt.show() # 1 plot per channel
         array_luminances.append(array_luminance_i)
 
         # also do the normalized luminance (to the max luminance of each channel)
-        array_normalized_luminance_i = lx.spd_normalize(np.copy(array_luminance_i), wl=False) # TODO: FIX!!!!! 'max' is not working! ASK WHY!!!!
+        array_normalized_luminance_i = normalize_max(array_luminance_i)
+        # array_normalized_luminance_i = lx.spd_normalize(np.copy(array_luminance_i), wl=False) # luxpy:'max' is not working!
         #print(array_luminance_i)
         #print(array_normalized_luminance_i)
 
@@ -120,18 +131,23 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
         plt.xlabel('Driver Values')
         plt.ylabel('Normalized Luminance')
         plt.title('Normalized Luminance for different driver values')
-        # plt.show() # 1 plot per channel
+        plt.show() # 1 plot per channel
+        # TODO! GIRLS: if u can make the plots into one pretty image.
     # print(array_normalized_luminances)
     return array_normalized_luminances, array_luminances
 
-# function that receives an 1D array with (normalized) luminances of *1* channel and returns two functions that are the cubic spline interpolation of the (normalized) luminances and the corresponding driver values.
+# function that receives an 1D array with (normalized) luminances of ONE channel and returns two functions that are the cubic spline interpolation of the luminances and the corresponding driver values.
 # First one can take a x value and return the interpolated y value.
 # Second one can take a y value and return the interpolated x value.
 # Argument 'step' is the step that we increased the driver values to make measurements in task 2.
 def interpolate_luminances(array_luminances, step):
     # make sample points of driver values, according to the measurements that we did on task 2.
+
+    # start from 'step', since jeti couldn't measure from 0.
     driver_value = [i for i in range(step, 255+1, step)]
+    # Instead of '0', we started the measurements from driver value = 5. So we add it manually.
     driver_value.insert(0,5)
+    # And we shouldn't forget the driver value = 0. So again we add it manually
     driver_value.insert(0,0)
 
     # dv_to_lum -> give driver value to find luminance
@@ -141,14 +157,17 @@ def interpolate_luminances(array_luminances, step):
 
     # For every channel:
     for i in range(len(array_luminances)):
+        # In the code above, we inserted manually the driver value = 0, for our 'x' function. Now, we need to do the same for our 'y' function (corresponding to luminances. So we add a luminance = 0 in the beginning of the array)
         np.insert(array_luminances, 0, 0)
+
+        # make the interpolation functions:
         dv_to_lum.append(CubicSpline(driver_value, array_luminances[i]))
         lum_to_dv.append(CubicSpline(array_luminances[i], driver_value))
     
     
     return dv_to_lum, lum_to_dv
 
-# HOW ABOVE INTERPOLATION WORKS:
+# HOW ABOVE INTERPOLATION WORKS, example:
 # cs_x, cs_y = interpolate_normalized_luminances(normalized_luminances_array)
 # print(cs_x(200), cs_y(40000)) -> should print (example numbers): cs_x(200) ~= 40000, and cs_y(40000) ~= 200
 
@@ -182,18 +201,16 @@ def read_file_measurements(filename):
 def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_array, luminances):
     t_l = 100 # Target Luminance: find the correct driver values for R,G,B that have luminance = 100 (or as close to 100)
 
-    #for red channel see plot
-    # x = [i for i in range(0,256)]
-    # y = [dv_to_lum[1](i) for i in range(0,256)]
-
-    # max = np.max(np.array(lum_to_dv[1]))
-    y = []
-    for i in range(0,1000,5):
-        y.append(lum_to_dv[1](i))
-    x = [i for i in range(0,1000,5)]
-    plt.clf()
-    plt.plot(x, y, **{'color': 'lightsteelblue', 'marker': 'o'})
-    plt.show()
+    # __________
+    # Commented code below is just a test to check if our interpolation function lum_to_div works, and it does :)
+    # y = []
+    # for i in range(0,1000,5):
+    #     y.append(lum_to_dv[1](i))
+    # x = [i for i in range(0,1000,5)]
+    # plt.clf()
+    # plt.plot(x, y, **{'color': 'lightsteelblue', 'marker': 'o'})
+    # plt.show()
+    # __________
 
     # EEW tristimulous values are XYZ = [100,100,100]
     # EEW chromaticity coordinates are x,y = [1/3, 1/3]
@@ -207,22 +224,23 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
     # print(spd_p)
     # print(spd_p.shape)
 
-    # Now we convert the stacked-spd of the primaries into Yxy coordinates
+    # Now we convert the stacked-spd of the primaries into XYZ and then into Yxy coordinates
     XYZp = lx.spd_to_xyz(spd_p, cieobs='1964_10', relative=False)
     Yxyp = lx.xyz_to_Yxy(XYZp) 
-    print("Yxy primaries: " + str(Yxyp))
+    print("Yxy of primaries: " + str(Yxyp))
 
     # We need to solve w[] = Cp^-1 * Ct[], where w[]: weights vector, Cp^-1: inverse of primaries Yxy coords, and Ct[]: target color vector Yxy coords.
     weights = spb.colormixer_pinv(Yxy_eew,Yxyp,input_fmt='Yxy')[0] # mixing using Yxy, it returns a 2D array, so we use array[0] to get only one dimension
-    print("weights: " + str(weights))
+    print("weights of luminance for channels: " + str(weights))
 
     # (girls, make sure this is theoritically correct:) weights are on a scale of 0-1, and they correspond to the weighted luminance of each channel. We have made a cubic spline interpolation to find the driver value to a luminance value. So the final driver value for each channel that we are going to mix is: the result of the interpolation function lum_to_dv, after we put as input the weighted luminance of this channel (we are selecting the max luminance out of all measured luminances of the channel).
     driver_values = []
     for i in range(N):
       luminance_of_channel = np.array(luminances[i]).max()
       print("luminance of channel:" + str(luminance_of_channel))
+
       weighted_luminance_of_channel = luminance_of_channel*weights[i]
-      print("weighted luminance: " + str(weighted_luminance_of_channel))
+      print("weighted luminance of channel: " + str(weighted_luminance_of_channel))
       print(lum_to_dv[i](weighted_luminance_of_channel))
 
       # since interpolation is going to give float result, we use function floor to take the previous integer.
@@ -251,8 +269,8 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
 
     # compare Yxy coordinates of both colors
     Yxy_mixed_measured = lx.xyz_to_Yxy(XYZ_mixed_measured) # mixed color
-    print('Target Yxy: ' + str(Yxy_eew))
-    print('Result Yxy: ' + str(Yxy_mixed_measured))
+    print('Target Yxy (Luminance, x, y coordinate): ' + str(Yxy_eew))
+    print('Result Yxy (Luminance, x, y coordinate): ' + str(Yxy_mixed_measured))
 
     # plot chromaticity diagram
     # plotSL plots the spectrum locus
