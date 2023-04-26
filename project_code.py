@@ -82,7 +82,7 @@ def auto_measure(UV_on, step):
 # since kevin's function isn't working, we make our own, that normalizes the luminances according to the max luminance of each channel. It does the job for ONE channel at a time.
 def normalize_max(array_luminance_i):
     normalized_luminances = []
-    max = max(array_luminance_i)
+    max = np.max(array_luminance_i)
 
     # divide all elements of array with max, to normalize
     normalized_luminances = array_luminance_i / max
@@ -233,7 +233,7 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
     weights = spb.colormixer_pinv(Yxy_eew,Yxyp,input_fmt='Yxy')[0] # mixing using Yxy, it returns a 2D array, so we use array[0] to get only one dimension
     print("weights of luminance for channels: " + str(weights))
 
-    # (girls, make sure this is theoritically correct:) weights are on a scale of 0-1, and they correspond to the weighted luminance of each channel. We have made a cubic spline interpolation to find the driver value to a luminance value. So the final driver value for each channel that we are going to mix is: the result of the interpolation function lum_to_dv, after we put as input the weighted luminance of this channel (we are selecting the max luminance out of all measured luminances of the channel).
+    # (girls, make sure this is theoritically correct:) weights are on a scale of 0-1, and they correspond to the weighted luminance/tristimulous value 'Y' of each channel. We have made a cubic spline interpolation to find the driver value to a luminance value. So the final driver value for each channel that we are going to mix is: the result of the interpolation function lum_to_dv, after we put as input the weighted luminance of this channel (we are selecting the max luminance out of all measured luminances of the channel).
     driver_values = []
     for i in range(N):
       luminance_of_channel = np.array(luminances[i]).max()
