@@ -31,7 +31,7 @@ def changeColors(*args):
 # _______________________________________________________________________
 
 # Measure spectra of all channels (maybe not UV)
-def auto_measure(UV_on, step):
+def auto_measure(UV_on, driver_values_array):
     array_measured_spectra = [] # in the end it will be [5 or 6]x[255/step]x[471] (471: wavelength steps, like [450, 455,...678,680..])
     wavelengths_array = [] # stores the wavelengths spectrum (eg [480, 485, 450......675, 680])
     wl_saved = False # boolean variable useful for saving the spectrum of wavelengths only once
@@ -47,13 +47,16 @@ def auto_measure(UV_on, step):
         # For each measurement: (#measurements=255/step)
 
         DMX_arguments_tmp_array = [0]*6
-        DMX_arguments_tmp_array[i] = 5
-        changeColors(*DMX_arguments_tmp_array)
-        # after changing the lamp colors, measure the spd:
-        spd = sp.get_spd(manufacturer='jeti')
-        channel_array.append(spd[1])
 
-        for j in range(step, 255+1, step):
+        # old code to manually add driver value = 5
+        # DMX_arguments_tmp_array[i] = 5
+        # changeColors(*DMX_arguments_tmp_array)
+        # # after changing the lamp colors, measure the spd:
+        # spd = sp.get_spd(manufacturer='jeti')
+        # channel_array.append(spd[1])
+
+        # for j in range(step, 255+1, step): old way of measuring
+        for j in driver_values_array:
             # initialize all the drivers values to zero -> [0,0,0,0,0,0].
             DMX_arguments_tmp_array = [0]*6
             # we will measure every channel, increasing the value (0-255) with an interval/step.
@@ -63,8 +66,9 @@ def auto_measure(UV_on, step):
             DMX_arguments_tmp_array[i] = j
             changeColors(*DMX_arguments_tmp_array)
 
+            
             # after changing the lamp colors, measure the spd:
-            spd = sp.get_spd(manufacturer='jeti')
+            spd = sp.get_spd(manufacturer='jeti', autoTint_max = 5) # 5 seconds maximum 
 
             # HAPPENS ONLY ONCE: saves the wavelengths that are part of the spd (in luxpy) as an array, for practical purposes
             if not wl_saved:
@@ -91,7 +95,7 @@ def normalize_max(array_luminance_i):
 
 # takes as an arguments the array that was calculated in the previous function: all the spds for every channel AND the array of the wavelengths spectrum AND the measurement step
 # and returns the normalized luminances array of size: [#channels, #measurements] AND the non-normalized luminances
-def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
+def make_luminance_plots(array_measured_spectra, wavelengths_array, step, driver_values_array):
     array_luminances = []
     array_normalized_luminances = []
     # print("len: "+str(len(array_measured_spectra)))
@@ -106,10 +110,15 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
             # print("illuminance of channel measurement: " + str(np.array(tmp).shape))
 
         # now we have all luminances for all measurements for different driver values for this specific i-channel. And we'll make a plot
-        x = [i for i in range(0, 255+1, step)]
-        x.insert(1,5) #insert 5 dv in 1 index
 
-        array_luminance_i.insert(0,0)
+        # old way
+        # x = [i for i in range(0, 255+1, step)]
+        # x.insert(1,5) #insert 5 dv in 1 index
+
+        # array_luminance_i.insert(0,0)
+
+        # new way
+        x = driver_values_array
 
         plt.plot(x, array_luminance_i, **{'color': 'lightsteelblue', 'marker': 'o'})
         plt.xlabel('Driver Values')
@@ -140,15 +149,19 @@ def make_luminance_plots(array_measured_spectra, wavelengths_array, step):
 # First one can take a x value and return the interpolated y value.
 # Second one can take a y value and return the interpolated x value.
 # Argument 'step' is the step that we increased the driver values to make measurements in task 2.
-def interpolate_luminances(array_luminances, step):
+def interpolate_luminances(array_luminances, step, driver_values_array):
     # make sample points of driver values, according to the measurements that we did on task 2.
 
-    # start from 'step', since jeti couldn't measure from 0.
-    driver_value = [i for i in range(step, 255+1, step)]
-    # Instead of '0', we started the measurements from driver value = 5. So we add it manually.
-    driver_value.insert(0,5)
-    # And we shouldn't forget the driver value = 0. So again we add it manually
-    driver_value.insert(0,0)
+    # # start from 'step', since jeti couldn't measure from 0.
+    # driver_value = [i for i in range(step, 255+1, step)]
+    # # Instead of '0', we started the measurements from driver value = 5. So we add it manually.
+    # driver_value.insert(0,5)
+    # # And we shouldn't forget the driver value = 0. So again we add it manually
+    # driver_value.insert(0,0)
+
+    # new way
+    driver_value = driver_values_array
+    print("DRIVER VALUES INTERPOLATION:" + str(driver_value))
 
     # dv_to_lum -> give driver value to find luminance
     # lum_to_dv -> give luminance to find driver value
@@ -158,7 +171,7 @@ def interpolate_luminances(array_luminances, step):
     # For every channel:
     for i in range(len(array_luminances)):
         # In the code above, we inserted manually the driver value = 0, for our 'x' function. Now, we need to do the same for our 'y' function (corresponding to luminances. So we add a luminance = 0 in the beginning of the array)
-        np.insert(array_luminances, 0, 0)
+        # np.insert(array_luminances, 0, 0)
 
         # make the interpolation functions:
         dv_to_lum.append(CubicSpline(driver_value, array_luminances[i]))
@@ -191,6 +204,7 @@ def get_stacked_spd(array_measured_spectra, wavelengths_array, N):
 
 # saves a numpy array to a file using numpy function
 def save_file_measurements(spd, filename):
+    
     np.save(filename, spd)
 
 # takes a filename that contains a numpy array, as an argument, and returns this array after it loads it using a numpy function 
@@ -202,20 +216,23 @@ def get_driver_values(N, luminances, weights, lum_to_dv):
     # (girls, make sure this is theoritically correct:) weights are on a scale of 0-1, and they correspond to the weighted luminance/tristimulous value 'Y' of each channel. We have made a cubic spline interpolation to find the driver value to a luminance value. So the final driver value for each channel that we are going to mix is: the result of the interpolation function lum_to_dv, after we put as input the weighted luminance of this channel (we are selecting the max luminance out of all measured luminances of the channel).
     driver_values = []
     for i in range(N):
-      luminance_of_channel = np.array(luminances[i]).max()
-    #   print("luminance of channel:" + str(luminance_of_channel))
+        luminance_of_channel = np.array(luminances[i]).max()
+        print("luminance of channel:" + str(luminance_of_channel))
 
-      weighted_luminance_of_channel = luminance_of_channel*weights[i]
-    #   print("weighted luminance of channel: " + str(weighted_luminance_of_channel))
-    #   print("Driver values calculated: " + str(lum_to_dv[i](weighted_luminance_of_channel)))
+        weighted_luminance_of_channel = luminance_of_channel*weights[i]
+        print("weighted luminance of channel: " + str(weighted_luminance_of_channel))
+        print("Driver values calculated: " + str(lum_to_dv[i](weighted_luminance_of_channel)))
 
-      # since interpolation is going to give float result, we use function floor to take the previous integer.
-      arg = np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int)
+        # since interpolation is going to give float result, we use function floor to take the previous integer.
+        arg = np.floor(lum_to_dv[i](weighted_luminance_of_channel)).astype(int)
 
-      # if for any reason driver value is larger thatn 255, keep only 255.
-      if arg > 255:
-          arg = 255
-      driver_values.append(arg)
+        # if for any reason driver value is larger thatn 255, keep only 255.
+        if arg > 255:
+            arg = 255
+        if arg < 0:
+            arg = 0
+
+        driver_values.append(arg)
   
     # padding the arguments with the right amount of zeros in the end to "fill" all the driver values of channels we didn't use. THe number of these channels is 6-N.
     arguments = np.pad(driver_values, (0,6-N), 'constant', constant_values=(0))
@@ -231,13 +248,13 @@ def task3(dv_to_lum, lum_to_dv, step, N, array_measured_spectra, wavelengths_arr
 
     # __________
     # Commented code below is just a test to check if our interpolation function lum_to_div works, and it does :)
-    # y = []
-    # for i in range(0,1000,5):
-    #     y.append(lum_to_dv[1](i))
-    # x = [i for i in range(0,1000,5)]
-    # plt.clf()
-    # plt.plot(x, y, **{'color': 'lightsteelblue', 'marker': 'o'})
-    # plt.show()
+    y = []
+    for i in range(0,1000,5):
+        y.append(lum_to_dv[1](i))
+    x = [i for i in range(0,1000,5)]
+    plt.clf()
+    plt.plot(x, y, **{'color': 'lightsteelblue', 'marker': 'o'})
+    plt.show()
     # __________
 
     # EEW tristimulous values are XYZ = [100,100,100]
@@ -394,17 +411,36 @@ def task4(lum_to_dv, measurement_step, N, array_measured_spectra, wavelengths_ar
 
     return
 
-# gets spd measuring data either from file, or from measuring with task 2
-def get_spd_data(file_saved, measurement_step):
-    if not file_saved:
-        array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
-        save_file_measurements(array_measured_spectra, 'array_measured_spectra.npy')
-        save_file_measurements(wavelengths_array, 'wavelengths_array.npy')
-    else:
-        array_measured_spectra = read_file_measurements('array_measured_spectra.npy')
-        wavelengths_array = read_file_measurements('wavelengths_array.npy')
+# return array with driver values corresponding to step, with added '5' value.
+def get_driver_values_array(measurement_step):
+    driver_values = []
+    driver_values.append(0)
+    driver_values.append(5)
+    for i in range(measurement_step, 255+1, measurement_step):
+        driver_values.append(i)
+    return driver_values
 
-    return array_measured_spectra, wavelengths_array
+# gets spd measuring data either from file, or from measuring with task 2
+# measurement_step is optional
+def get_spd_data(file_saved, measurement_step = None):
+    if file_saved:
+        # array_measured_spectra = read_file_measurements('array_measured_spectra.npy')
+        # wavelengths_array = read_file_measurements('wavelengths_array.npy')
+        msr = np.load('measurements.npz')
+        array_measured_spectra = msr['spd']
+        driver_values_array = msr['d_v']
+        wavelengths_array = msr['wl']
+    else:
+        # array_measured_spectra, wavelengths_array = auto_measure(False, measurement_step)
+        driver_values_array = get_driver_values_array(measurement_step)
+        array_measured_spectra, wavelengths_array = auto_measure(False, driver_values_array)
+
+        np.savez('measurements', spd=array_measured_spectra, d_v=driver_values_array, wl=wavelengths_array)
+        # save_file_measurements(array_measured_spectra, 'array_measured_spectra.npy')
+        # save_file_measurements(wavelengths_array, 'wavelengths_array.npy')
+        
+
+    return array_measured_spectra, driver_values_array, wavelengths_array
 
 # _______________________________________________________________________
 # _____________________________MAIN SCRIPT_______________________________
@@ -427,13 +463,14 @@ measurement_step = 51 #  integer divisions of 255. The more the better the resul
 file_saved = True
 
 print("\n___TASK 1/2: getting spd data___")
-array_measured_spectra, wavelengths_array = get_spd_data(file_saved, measurement_step)
+array_measured_spectra, driver_values_array, wavelengths_array = get_spd_data(file_saved, measurement_step)
+# print(np.array(array_measured_spectra).shape)
 
-normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step) # size: channels x measurements
+normalized_luminances, luminances = make_luminance_plots(copy.deepcopy(array_measured_spectra), wavelengths_array, measurement_step, driver_values_array) # size: channels x measurements
 # print("luminance: " + str(luminances))
 
 # dv_to_lum_norma, lum_to_dv_norma = interpolate_luminances(normalized_luminances, measurement_step)
-dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step)
+dv_to_lum, lum_to_dv = interpolate_luminances(luminances, measurement_step, driver_values_array)
 
 N = 4 # number of colors/channels we want to mix
 print("\n___TASK 3: mixing {0} channels___".format(N))
